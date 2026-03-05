@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Security, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,6 +31,8 @@ from app.services.subscription_service import SubscriptionService
 from ..dependencies import get_db_session, require_api_token
 from ..schemas.users import (
     BalanceUpdateRequest,
+    PaymentLinkRequest,
+    PaymentLinkResponse,
     PromoGroupSummary,
     SubscriptionSummary,
     UserCreateRequest,
@@ -39,6 +42,8 @@ from ..schemas.users import (
     UserUpdateRequest,
 )
 
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter()
 
@@ -329,6 +334,147 @@ async def update_balance(
         found_user = await get_user_by_id(db, found_user.id)
 
     return _serialize_user(found_user)
+
+
+_PAYMENT_METHODS_NOT_SUPPORTED = frozenset({'telegram_stars', 'manual', 'balance', 'tribute'})
+
+
+@router.post('/{user_id}/payment-link', response_model=PaymentLinkResponse)
+async def create_payment_link(
+    user_id: int,
+    payload: PaymentLinkRequest,
+    _: Any = Security(require_api_token),
+    db: AsyncSession = Depends(get_db_session),
+) -> PaymentLinkResponse:
+    """
+    Создать платёжную ссылку для пользователя.
+
+    Поддерживаемые payment_method:
+    yookassa, freekassa, kassa_ai, cryptobot, heleket,
+    mulenpay, pal24, wata, platega, cloudpayments.
+    """
+    user = await _get_user_by_id_or_telegram_id(db, user_id)
+
+    method = payload.payment_method.lower()
+    if method in _PAYMENT_METHODS_NOT_SUPPORTED:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f'Payment method "{method}" does not support external payment links',
+        )
+
+    if payload.amount_kopeks <= 0:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, 'amount_kopeks must be positive')
+
+    from app.services.payment_service import PaymentService
+
+    payment_service = PaymentService()
+    description = payload.description or 'Оплата через API'
+    amount_kopeks = payload.amount_kopeks
+    amount_rubles = amount_kopeks / 100
+
+    result = await _dispatch_payment(
+        method, payment_service, db,
+        user=user,
+        amount_kopeks=amount_kopeks,
+        description=description,
+        payment_system_id=payload.payment_system_id,
+    )
+
+    if not result:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, 'Failed to create payment link')
+
+    return PaymentLinkResponse(
+        payment_url=result['payment_url'],
+        payment_method=method,
+        order_id=result.get('order_id'),
+        amount_kopeks=result.get('amount_kopeks', amount_kopeks),
+        amount_rubles=result.get('amount_rubles', amount_rubles),
+        expires_at=result.get('expires_at'),
+        local_payment_id=result.get('local_payment_id'),
+    )
+
+
+async def _dispatch_payment(
+    method: str,
+    ps: Any,
+    db: AsyncSession,
+    *,
+    user: Any,
+    amount_kopeks: int,
+    description: str,
+    payment_system_id: int | None,
+) -> dict[str, Any] | None:
+    """Вызывает нужный провайдер по имени метода."""
+    if method == 'kassa_ai':
+        return await ps.create_kassa_ai_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'freekassa':
+        return await ps.create_freekassa_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'yookassa':
+        return await ps.create_yookassa_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'cryptobot':
+        from app.utils.currency_converter import currency_converter
+
+        amount_usd = await currency_converter.rub_to_usd(amount_kopeks / 100)
+        return await ps.create_cryptobot_payment(
+            db, user_id=user.id, amount_usd=round(amount_usd, 2),
+            description=description,
+        )
+
+    if method == 'heleket':
+        return await ps.create_heleket_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'mulenpay':
+        return await ps.create_mulenpay_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'pal24':
+        return await ps.create_pal24_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description, language='ru',
+        )
+
+    if method == 'wata':
+        return await ps.create_wata_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description,
+        )
+
+    if method == 'platega':
+        return await ps.create_platega_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description, language='ru',
+            payment_method_code=payment_system_id or 2,
+        )
+
+    if method == 'cloudpayments':
+        return await ps.create_cloudpayments_payment(
+            db, user_id=user.id, amount_kopeks=amount_kopeks,
+            description=description, telegram_id=user.telegram_id,
+        )
+
+    raise HTTPException(
+        status.HTTP_400_BAD_REQUEST,
+        f'Unknown payment method: {method}. '
+        f'Supported: kassa_ai, freekassa, yookassa, cryptobot, heleket, '
+        f'mulenpay, pal24, wata, platega, cloudpayments',
+    )
 
 
 async def _get_user_by_id_or_telegram_id(db: AsyncSession, user_id: int) -> User:

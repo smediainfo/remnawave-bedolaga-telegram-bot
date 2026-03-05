@@ -97,3 +97,30 @@ class UserSubscriptionCreateRequest(BaseModel):
     squad_uuid: str | None = None
     connected_squads: list[str] | None = None
     replace_existing: bool = False
+
+
+class PaymentLinkRequest(BaseModel):
+    """Запрос на создание платёжной ссылки.
+
+    payment_method — какую платёжную систему использовать:
+        yookassa, freekassa, kassa_ai, cryptobot, heleket,
+        mulenpay, pal24, wata, platega, cloudpayments.
+    payment_system_id — под-метод провайдера (например, 44=СБП для kassa_ai).
+    """
+
+    payment_method: str = 'kassa_ai'
+    amount_kopeks: int
+    payment_system_id: int | None = None
+    description: str | None = None
+
+
+class PaymentLinkResponse(BaseModel):
+    """Ответ с данными платёжной ссылки."""
+
+    payment_url: str
+    payment_method: str
+    order_id: str | None = None
+    amount_kopeks: int
+    amount_rubles: float
+    expires_at: str | None = None
+    local_payment_id: int | None = None
