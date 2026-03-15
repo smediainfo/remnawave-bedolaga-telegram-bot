@@ -221,6 +221,25 @@ async def create_paid_subscription(
     if device_limit is None:
         device_limit = settings.DEFAULT_DEVICE_LIMIT
 
+    # Fallback: если connected_squads пустой, берём первый доступный сквад
+    final_squads = list(connected_squads) if connected_squads else []
+    if not final_squads:
+        try:
+            from app.database.crud.server_squad import get_available_server_squads
+
+            available = await get_available_server_squads(db)
+            if available:
+                final_squads = [available[0].squad_uuid]
+                logger.warning(
+                    '⚠️ connected_squads пустой при создании платной подписки, используем fallback',
+                    user_id=user_id,
+                    fallback_squad=final_squads[0],
+                )
+            else:
+                logger.error('❌ Нет доступных сквадов для fallback', user_id=user_id)
+        except Exception as error:
+            logger.error('❌ Ошибка получения fallback сквада', user_id=user_id, error=error)
+
     subscription = Subscription(
         user_id=user_id,
         status=SubscriptionStatus.ACTIVE.value,
@@ -229,7 +248,7 @@ async def create_paid_subscription(
         end_date=end_date,
         traffic_limit_gb=traffic_limit_gb,
         device_limit=device_limit,
-        connected_squads=connected_squads or [],
+        connected_squads=final_squads,
         autopay_enabled=settings.is_autopay_enabled_by_default(),
         autopay_days_before=settings.DEFAULT_AUTOPAY_DAYS_BEFORE,
         tariff_id=tariff_id,
@@ -249,7 +268,7 @@ async def create_paid_subscription(
         status=subscription.status,
     )
 
-    squad_uuids = list(connected_squads or [])
+    squad_uuids = list(final_squads)
     if update_server_counters and squad_uuids:
         try:
             from app.database.crud.server_squad import (
@@ -550,6 +569,21 @@ async def extend_subscription(
 
     if connected_squads is not None:
         old_squads = subscription.connected_squads
+        # Fallback: если передан пустой список сквадов, берём доступный
+        if not connected_squads:
+            try:
+                from app.database.crud.server_squad import get_available_server_squads
+
+                available = await get_available_server_squads(db)
+                if available:
+                    connected_squads = [available[0].squad_uuid]
+                    logger.warning(
+                        '⚠️ connected_squads пустой при продлении подписки, используем fallback',
+                        subscription_id=subscription.id,
+                        fallback_squad=connected_squads[0],
+                    )
+            except Exception as error:
+                logger.error('❌ Ошибка получения fallback сквада при продлении', error=error)
         subscription.connected_squads = connected_squads
         logger.info('🌍 Обновлены сквады: →', old_squads=old_squads, connected_squads=connected_squads)
 
