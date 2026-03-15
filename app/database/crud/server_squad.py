@@ -141,8 +141,9 @@ async def get_available_server_squads(
         .order_by(ServerSquad.sort_order, ServerSquad.display_name)
     )
 
-    if exclude_trial_only:
-        query = query.where(ServerSquad.is_trial_eligible.is_(False))
+    # NOTE: exclude_trial_only is intentionally ignored.
+    # is_trial_eligible means "available for trial", NOT "trial-only".
+    # Filtering it out excludes servers that are valid for both trial and paid.
 
     if promo_group_id is not None:
         query = query.join(ServerSquad.allowed_promo_groups).where(PromoGroup.id == promo_group_id)
