@@ -1000,6 +1000,19 @@ async def update_user_subscription(
                 if tariff.allowed_squads:
                     connected_squads = tariff.allowed_squads
 
+        # Fallback: assign default squad if none resolved from tariff
+        if not connected_squads:
+            from app.database.crud.server_squad import get_random_active_squad_uuid
+
+            default_squad = await get_random_active_squad_uuid(db)
+            if default_squad:
+                connected_squads = [default_squad]
+                logger.info(
+                    'Admin create: assigned default squad',
+                    user_id=user_id,
+                    squad_uuid=default_squad,
+                )
+
         new_sub = await create_paid_subscription(
             db=db,
             user_id=user.id,
