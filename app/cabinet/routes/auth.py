@@ -1182,6 +1182,9 @@ async def login_email(
     response = await _create_auth_response(user, db)
     await _store_refresh_token(db, user.id, response.refresh_token)
 
+    # Process referral code (before campaign bonus, which may also set referrer)
+    await _process_referral_code(db, user, request.referral_code)
+
     # Process campaign bonus
     response.campaign_bonus = await _process_campaign_bonus(db, user, request.campaign_slug)
     if response.campaign_bonus:
