@@ -7,8 +7,6 @@ using the Measurement Protocol. Each event is preceded by a warm-up pageview.
 from __future__ import annotations
 
 import asyncio
-import re
-
 import httpx
 import structlog
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,7 +28,6 @@ TIMEOUT = 10.0
 MAX_RETRIES = 3
 RETRY_DELAY = 1.0
 
-_CID_RE = re.compile(r'^[A-Za-z0-9._:-]{4,64}$')
 
 
 def _is_enabled() -> bool:
@@ -219,6 +216,23 @@ async def store_cid_and_fire_registration(
             spawn_bg(fire_registration_bg(user_id))
     except Exception as exc:
         logger.warning(f'{LOG_PREFIX} Failed to store CID and fire registration', user_id=user_id, error=str(exc))
+
+
+async def store_cid_and_fire_registration_bg(
+    user_id: int,
+    cid: str,
+    *,
+    source: str = 'web',
+) -> None:
+    """Background version: opens own DB session, stores CID and fires registration."""
+    try:
+        async with AsyncSessionLocal() as db:
+            stored = await store_cid(db, user_id, cid, source=source)
+            if stored:
+                await db.commit()
+        spawn_bg(fire_registration_bg(user_id))
+    except Exception as exc:
+        logger.warning(f'{LOG_PREFIX} bg store_cid failed', user_id=user_id, error=str(exc))
 
 
 async def on_registration(db: AsyncSession, user_id: int) -> None:
