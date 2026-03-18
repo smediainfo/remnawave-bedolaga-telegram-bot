@@ -53,8 +53,7 @@ async def _finalize_oauth_login(
 
     await _process_referral_code(db, user, referral_code)
 
-    if yandex_cid:
-        await _process_yandex_cid(db, user, yandex_cid, source='web')
+    _process_yandex_cid(user, yandex_cid, source='web')
 
     auth_response.campaign_bonus = await _process_campaign_bonus(db, user, campaign_slug)
     if auth_response.campaign_bonus:
