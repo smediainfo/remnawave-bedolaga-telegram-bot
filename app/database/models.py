@@ -3288,6 +3288,7 @@ class GuestPurchase(Base):
     auto_login_token = Column(Text, nullable=True)
     recipient_warning = Column(String(50), nullable=True)
     retry_count = Column(Integer, nullable=False, default=0, server_default='0')
+    yandex_cid = Column(String(128), nullable=True)
 
     landing = relationship('LandingPage', back_populates='guest_purchases', lazy='selectin')
     tariff = relationship('Tariff', lazy='selectin')
