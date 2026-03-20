@@ -1,7 +1,7 @@
 """add yandex_client_id_map table for offline conversions
 
-Revision ID: 0032
-Revises: 0031
+Revision ID: 0043
+Revises: 0042
 Create Date: 2026-03-04
 """
 
@@ -10,8 +10,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = '0041'
-down_revision: Union[str, None] = '0040'
+revision: str = '0043'
+down_revision: Union[str, None] = '0042'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
