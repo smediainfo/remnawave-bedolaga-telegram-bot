@@ -214,6 +214,28 @@ def _get_status_info(record: PendingPayment) -> tuple[str, str]:
         }
         return mapping.get(status_str, ('❓', 'Неизвестно'))
 
+    if record.method == PaymentMethod.KASSA_AI:
+        mapping = {
+            'pending': ('⏳', 'Ожидает оплаты'),
+            'paid': ('✅', 'Оплачено'),
+            'success': ('✅', 'Оплачено'),
+            'canceled': ('❌', 'Отменено'),
+            'expired': ('⌛', 'Истёк'),
+            'error': ('❌', 'Ошибка'),
+        }
+        return mapping.get(status_str, ('❓', 'Неизвестно'))
+
+    if record.method == PaymentMethod.UNITPAY:
+        mapping = {
+            'pending': ('⏳', 'Ожидает оплаты'),
+            'wait': ('⏳', 'Ожидает оплаты'),
+            'process': ('⌛', 'Обрабатывается'),
+            'success': ('✅', 'Оплачено'),
+            'error': ('❌', 'Ошибка'),
+            'refund': ('↩️', 'Возврат'),
+        }
+        return mapping.get(status_str, ('❓', 'Неизвестно'))
+
     return '❓', 'Неизвестно'
 
 
