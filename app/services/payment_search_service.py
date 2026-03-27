@@ -29,6 +29,7 @@ from app.database.models import (
     SeverPayPayment,
     Transaction,
     TransactionType,
+    UnitPayPayment,
     User,
     WataPayment,
     YooKassaPayment,
@@ -450,6 +451,38 @@ async def _search_wata(db: AsyncSession, params: SearchParams) -> list[PendingPa
     return records
 
 
+async def _search_unitpay(db: AsyncSession, params: SearchParams) -> list[PendingPayment]:
+    stmt = select(UnitPayPayment).options(selectinload(UnitPayPayment.user)).order_by(desc(UnitPayPayment.created_at))
+    stmt = _apply_date_filter(stmt, UnitPayPayment.created_at, params.cutoff, params.upper_bound)
+
+    if params.search:
+        kind = _detect_user_search_kind(params.search)
+        if kind == _UserSearchKind.INVOICE:
+            conditions = [
+                UnitPayPayment.order_id.ilike(f'%{_escape_like(params.search)}%'),
+                UnitPayPayment.unitpay_payment_id.ilike(f'%{_escape_like(params.search)}%'),
+            ]
+            stmt = stmt.where(or_(*conditions))
+        else:
+            stmt = _apply_user_join_filter(stmt, UnitPayPayment, kind, params.search)
+
+    stmt = stmt.limit(MAX_RECORDS_PER_PROVIDER)
+    result = await db.execute(stmt)
+    records: list[PendingPayment] = []
+    for payment in result.scalars().all():
+        record = _build_record(
+            PaymentMethod.UNITPAY,
+            payment,
+            identifier=payment.order_id,
+            amount_kopeks=payment.amount_kopeks,
+            status=payment.status or '',
+            is_paid=bool(payment.is_paid),
+        )
+        if record:
+            records.append(record)
+    return records
+
+
 async def _search_platega(db: AsyncSession, params: SearchParams) -> list[PendingPayment]:
     stmt = select(PlategaPayment).options(selectinload(PlategaPayment.user)).order_by(desc(PlategaPayment.created_at))
     stmt = _apply_date_filter(stmt, PlategaPayment.created_at, params.cutoff, params.upper_bound)
@@ -708,6 +741,7 @@ _PROVIDER_SEARCH_MAP: dict[PaymentMethod, Any] = {
     PaymentMethod.MULENPAY: _search_mulenpay,
     PaymentMethod.PAL24: _search_pal24,
     PaymentMethod.WATA: _search_wata,
+    PaymentMethod.UNITPAY: _search_unitpay,
     PaymentMethod.PLATEGA: _search_platega,
     PaymentMethod.CLOUDPAYMENTS: _search_cloudpayments,
     PaymentMethod.FREEKASSA: _search_freekassa,
