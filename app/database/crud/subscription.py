@@ -1813,6 +1813,7 @@ async def get_daily_subscriptions_for_charge(db: AsyncSession) -> list[Subscript
     """
     from app.database.models import Tariff
 
+    now = datetime.now(UTC)
     one_day_ago = now - timedelta(hours=24)
 
     query = (

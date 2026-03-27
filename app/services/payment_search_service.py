@@ -458,9 +458,10 @@ async def _search_unitpay(db: AsyncSession, params: SearchParams) -> list[Pendin
     if params.search:
         kind = _detect_user_search_kind(params.search)
         if kind == _UserSearchKind.INVOICE:
+            escaped = _escape_like(params.search)
             conditions = [
-                UnitPayPayment.order_id.ilike(f'%{_escape_like(params.search)}%'),
-                UnitPayPayment.unitpay_payment_id.ilike(f'%{_escape_like(params.search)}%'),
+                UnitPayPayment.order_id.ilike(f'%{escaped}%'),
+                UnitPayPayment.unitpay_payment_id.ilike(f'%{escaped}%'),
             ]
             stmt = stmt.where(or_(*conditions))
         else:
