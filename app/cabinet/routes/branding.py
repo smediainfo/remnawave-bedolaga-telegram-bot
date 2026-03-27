@@ -1144,3 +1144,49 @@ async def update_legal_doc(
     await set_setting_value(db, key, payload.content)
     logger.info('Admin updated legal doc', telegram_id=admin.telegram_id, slug=slug)
     return LegalDocResponse(slug=slug, content=payload.content)
+
+
+# --- SEO Meta Tags ---
+
+SEO_TITLE_KEY = 'CABINET_SEO_TITLE'
+SEO_DESCRIPTION_KEY = 'CABINET_SEO_DESCRIPTION'
+SEO_OG_IMAGE_KEY = 'CABINET_SEO_OG_IMAGE'
+SEO_KEYWORDS_KEY = 'CABINET_SEO_KEYWORDS'
+
+
+class SeoSettingsResponse(BaseModel):
+    title: str = ''
+    description: str = ''
+    og_image: str = ''
+    keywords: str = ''
+
+
+class SeoSettingsUpdate(BaseModel):
+    title: str = Field('', max_length=70)
+    description: str = Field('', max_length=240)
+    og_image: str = Field('', max_length=500)
+    keywords: str = Field('', max_length=300)
+
+
+@router.get('/seo', response_model=SeoSettingsResponse)
+async def get_seo_settings(db: AsyncSession = Depends(get_cabinet_db)):
+    title = await get_setting_value(db, SEO_TITLE_KEY) or ''
+    description = await get_setting_value(db, SEO_DESCRIPTION_KEY) or ''
+    og_image = await get_setting_value(db, SEO_OG_IMAGE_KEY) or ''
+    keywords = await get_setting_value(db, SEO_KEYWORDS_KEY) or ''
+    return SeoSettingsResponse(title=title, description=description, og_image=og_image, keywords=keywords)
+
+
+@router.patch('/seo', response_model=SeoSettingsResponse)
+async def update_seo_settings(
+    payload: SeoSettingsUpdate,
+    db: AsyncSession = Depends(get_cabinet_db),
+    admin: User = Depends(require_permission('settings:edit')),
+):
+    await set_setting_value(db, SEO_TITLE_KEY, payload.title)
+    await set_setting_value(db, SEO_DESCRIPTION_KEY, payload.description)
+    await set_setting_value(db, SEO_OG_IMAGE_KEY, payload.og_image)
+    await set_setting_value(db, SEO_KEYWORDS_KEY, payload.keywords)
+    await db.commit()
+    logger.info('Admin updated SEO settings', admin_id=admin.id)
+    return SeoSettingsResponse(title=payload.title, description=payload.description, og_image=payload.og_image, keywords=payload.keywords)
