@@ -1,19 +1,11 @@
-"""Serves index.html with injected SEO meta tags for search engines and social previews.
-
-Supports per-landing SEO: /buy/{slug} pages use meta_title/meta_description
-from the landing_pages table. All other pages use global SEO settings.
-
-Setup:
-  1. Copy cabinet's index.html: docker cp cabinet:/usr/share/nginx/html/index.html data/cabinet_index.html
-  2. Point nginx location / to this endpoint for non-asset requests
-  3. Configure SEO settings via /cabinet/branding/seo API
-  4. Pass X-Original-URI header from nginx for per-page SEO
-"""
+"""Serves index.html with injected SEO meta tags for search engines and social previews."""
 
 import html as html_module
 import re
+import time
 from pathlib import Path
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -26,24 +18,47 @@ from app.database.models import LandingPage
 from ..dependencies import get_cabinet_db
 from .branding import SEO_DESCRIPTION_KEY, SEO_KEYWORDS_KEY, SEO_OG_IMAGE_KEY, SEO_TITLE_KEY
 
-
 logger = structlog.get_logger(__name__)
 
 router = APIRouter(tags=['SEO'])
 
+CABINET_URL = 'http://172.17.0.1:3020'
 INDEX_PATH = Path('data/cabinet_index.html')
+_TITLE_PLACEHOLDER = '<title>Loading...</title>'
+_CACHE_TTL = 60  # seconds
 
 _cached_html: str | None = None
-_TITLE_PLACEHOLDER = '<title>Loading...</title>'
+_cached_at: float = 0
 _BUY_SLUG_RE = re.compile(r'^/buy/([a-zA-Z0-9_-]+)')
 
 
-def _read_index() -> str:
-    global _cached_html
+async def _read_index() -> str:
+    global _cached_html, _cached_at
+    now = time.monotonic()
+    if _cached_html and (now - _cached_at) < _CACHE_TTL:
+        return _cached_html
+
+    # Try HTTP from cabinet container first (always fresh)
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            resp = await client.get(f'{CABINET_URL}/')
+            if resp.status_code == 200 and _TITLE_PLACEHOLDER in resp.text:
+                _cached_html = resp.text
+                _cached_at = now
+                return _cached_html
+    except Exception:
+        pass
+
+    # Fallback to file on disk
+    if INDEX_PATH.exists():
+        _cached_html = INDEX_PATH.read_text(encoding='utf-8')
+        _cached_at = now
+        return _cached_html
+
     if _cached_html:
         return _cached_html
-    _cached_html = INDEX_PATH.read_text(encoding='utf-8')
-    return _cached_html
+
+    raise FileNotFoundError('No cabinet index.html available')
 
 
 def _build_meta_block(title: str, description: str, og_image: str, keywords: str, url: str) -> str:
@@ -103,21 +118,15 @@ async def _get_landing_seo(db: AsyncSession, slug: str) -> dict | None:
 
 @router.get('/seo-index')
 async def seo_index(request: Request, db: AsyncSession = Depends(get_cabinet_db)):
-    """Serve index.html with SEO meta tags injected."""
     try:
-        original = _read_index()
+        original = await _read_index()
     except Exception:
         logger.exception('Failed to read cabinet index.html')
         return HTMLResponse('<html><body>Service unavailable</body></html>', status_code=502)
 
-    base_url = (
-        str(request.headers.get('x-forwarded-proto', 'https'))
-        + '://'
-        + str(request.headers.get('host', 'matrixvpn.top'))
-    )
+    base_url = str(request.headers.get('x-forwarded-proto', 'https')) + '://' + str(request.headers.get('host', 'matrixvpn.top'))
     request_path = request.headers.get('x-original-uri') or ''
 
-    # Per-landing SEO for /buy/{slug}
     landing_match = _BUY_SLUG_RE.match(request_path)
     if landing_match:
         slug = landing_match.group(1)
@@ -132,7 +141,6 @@ async def seo_index(request: Request, db: AsyncSession = Depends(get_cabinet_db)
             injected = original.replace(_TITLE_PLACEHOLDER, meta_block)
             return HTMLResponse(injected, headers={'Cache-Control': 'no-cache, must-revalidate'})
 
-    # Global SEO settings
     title = await get_setting_value(db, SEO_TITLE_KEY) or 'Cabinet'
     description = await get_setting_value(db, SEO_DESCRIPTION_KEY) or ''
     og_image = await get_setting_value(db, SEO_OG_IMAGE_KEY) or ''
@@ -142,8 +150,3 @@ async def seo_index(request: Request, db: AsyncSession = Depends(get_cabinet_db)
     injected = original.replace(_TITLE_PLACEHOLDER, meta_block)
 
     return HTMLResponse(injected, headers={'Cache-Control': 'no-cache, must-revalidate'})
-
-
-def invalidate_cache():
-    global _cached_html
-    _cached_html = None
