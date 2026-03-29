@@ -1,7 +1,7 @@
 """add yandex_client_id_map table + guest_purchases.yandex_cid column
 
-Revision ID: 0050
-Revises: 0049
+Revision ID: 0053
+Revises: 0052
 Create Date: 2026-03-23
 """
 
@@ -10,8 +10,8 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = '0050'
-down_revision: Union[str, None] = '0049'
+revision: str = '0053'
+down_revision: Union[str, None] = '0052'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
