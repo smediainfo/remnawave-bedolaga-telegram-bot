@@ -3392,6 +3392,7 @@ class GuestPurchase(Base):
     receipt_uuid = Column(String(255), nullable=True, index=True)
     receipt_created_at = Column(AwareDateTime(), nullable=True)
     yandex_cid = Column(String(128), nullable=True)
+    referrer = Column(String(500), nullable=True)
 
     landing = relationship('LandingPage', back_populates='guest_purchases', lazy='selectin')
     tariff = relationship('Tariff', lazy='selectin')

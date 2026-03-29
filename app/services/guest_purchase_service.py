@@ -142,6 +142,7 @@ async def create_purchase(
     source: str = 'landing',
     buyer_user_id: int | None = None,
     yandex_cid: str | None = None,
+    referrer: str | None = None,
     commit: bool = True,
 ) -> GuestPurchase:
     """Create a guest purchase record."""
@@ -162,6 +163,7 @@ async def create_purchase(
         source=source,
         buyer_user_id=buyer_user_id,
         yandex_cid=yandex_cid,
+        referrer=referrer,
         status=GuestPurchaseStatus.PENDING.value,
     )
 
