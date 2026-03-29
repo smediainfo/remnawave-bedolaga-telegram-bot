@@ -530,6 +530,7 @@ class LandingPurchaseItem(BaseModel):
     status: str
     created_at: datetime | None = None
     paid_at: datetime | None = None
+    referrer: str | None = None
 
 
 class LandingPurchaseListResponse(BaseModel):
@@ -988,6 +989,7 @@ async def get_landing_purchases(
             GuestPurchase.status,
             GuestPurchase.created_at,
             GuestPurchase.paid_at,
+            GuestPurchase.referrer,
         )
         .outerjoin(Tariff, GuestPurchase.tariff_id == Tariff.id)
         .where(where_clause)
@@ -1013,6 +1015,7 @@ async def get_landing_purchases(
             status=row.status,
             created_at=row.created_at,
             paid_at=row.paid_at,
+            referrer=row.referrer,
         )
         for row in items_result.all()
     ]
