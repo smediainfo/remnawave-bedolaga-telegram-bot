@@ -97,6 +97,27 @@ def _event_payload(cid: str, event_action: str) -> dict[str, str]:
     return payload
 
 
+
+
+def _ecommerce_purchase_payload(cid: str, amount_rubles: float, order_id: str = '') -> dict[str, str]:
+    """Build ecommerce:purchase payload for Metrika Measurement Protocol."""
+    payload = _base_payload(cid)
+    import json
+    payload.update({
+        't': 'event',
+        'ea': 'purchase',
+        'dl': settings.YANDEX_OFFLINE_CONV_DL or 'https://matrixvpn.top',
+        'dt': 'Matrixxx VPN',
+        'pa': 'purchase',
+        'pr1nm': 'VPN Subscription',
+        'pr1pr': str(amount_rubles),
+        'pr1qt': '1',
+        'pr1ca': 'VPN',
+        'tr': str(amount_rubles),
+        'ti': order_id or str(int(__import__('time').time())),
+    })
+    return payload
+
 async def _post_collect(payload: dict[str, str], kind: str, cid: str) -> bool:
     """POST to mc.yandex.ru/collect with retries. Returns True on success."""
     masked = _mask_cid(cid)
@@ -284,7 +305,7 @@ async def on_trial(db: AsyncSession, user_id: int) -> None:
 
 
 async def on_purchase(db: AsyncSession, user_id: int, amount_kopeks: int) -> None:
-    """Fire purchase event (every payment)."""
+    """Fire ecommerce purchase event (every payment)."""
     if not _is_enabled():
         return
 
@@ -293,9 +314,11 @@ async def on_purchase(db: AsyncSession, user_id: int, amount_kopeks: int) -> Non
         if not row:
             return
 
-        success = await _send_event(row.yandex_cid, 'purchase')
+        amount_rubles = amount_kopeks / 100
+        payload = _ecommerce_purchase_payload(row.yandex_cid, amount_rubles)
+        success = await _post_collect(payload, 'purchase', row.yandex_cid)
         if success:
-            logger.info('purchase event sent', user_id=user_id, amount=amount_kopeks / 100)
+            logger.info('purchase event sent', user_id=user_id, amount=amount_rubles)
     except Exception as exc:
         logger.error('purchase event failed', user_id=user_id, error=str(exc))
 
