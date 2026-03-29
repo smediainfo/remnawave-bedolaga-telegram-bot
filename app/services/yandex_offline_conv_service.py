@@ -1,7 +1,9 @@
 """Yandex.Metrika offline conversions service.
 
 Sends events (registration, trial-add, purchase) to mc.yandex.ru/collect
-using the Measurement Protocol. Each event is preceded by a warm-up pageview.
+using the Measurement Protocol. No pageview needed — user has active
+Metrika session from the site. yclid is passed via landing page URL,
+Metrika matches it automatically.
 """
 
 from __future__ import annotations
@@ -91,7 +93,6 @@ def _event_payload(cid: str, event_action: str) -> dict[str, str]:
         {
             't': 'event',
             'ea': event_action,
-            'dl': settings.YANDEX_OFFLINE_CONV_DL or 'https://web.mtrxvps.ru',
         }
     )
     return payload
@@ -99,22 +100,36 @@ def _event_payload(cid: str, event_action: str) -> dict[str, str]:
 
 
 
-def _ecommerce_purchase_payload(cid: str, amount_rubles: float, order_id: str = '') -> dict[str, str]:
+def _ecommerce_purchase_payload(
+    cid: str,
+    amount_rubles: float,
+    order_id: str = '',
+    product_name: str = '',
+    product_category: str = '',
+) -> dict[str, str]:
     """Build ecommerce:purchase payload for Metrika Measurement Protocol."""
+    import time as _time
+
+    service_name = (
+        getattr(settings, 'YANDEX_OFFLINE_CONV_DT', '')
+        or getattr(settings, 'PAYMENT_SERVICE_NAME', '')
+        or 'Subscription'
+    )
+    currency = getattr(settings, 'YANDEX_OFFLINE_CONV_CURRENCY', '') or 'RUB'
     payload = _base_payload(cid)
-    import json
     payload.update({
         't': 'event',
         'ea': 'purchase',
-        'dl': settings.YANDEX_OFFLINE_CONV_DL or 'https://matrixvpn.top',
-        'dt': 'Matrixxx VPN',
         'pa': 'purchase',
-        'pr1nm': 'VPN Subscription',
+        'ti': order_id or str(int(_time.time())),
+        'tr': str(amount_rubles),
+        'cu': currency,
+        'ev': str(amount_rubles),
+        'pr1id': 'subscription',
+        'pr1nm': product_name or service_name,
+        'pr1ca': product_category or 'subscription',
         'pr1pr': str(amount_rubles),
         'pr1qt': '1',
-        'pr1ca': 'VPN',
-        'tr': str(amount_rubles),
-        'ti': order_id or str(int(__import__('time').time())),
     })
     return payload
 
@@ -158,13 +173,7 @@ async def _post_collect(payload: dict[str, str], kind: str, cid: str) -> bool:
 
 
 async def _send_event(cid: str, event_action: str) -> bool:
-    """Send a warm-up pageview followed by the actual event."""
-    # Warm-up pageview (required by Metrika to associate the CID)
-    pv_ok = await _post_collect(_pageview_payload(cid), 'pageview', cid)
-    if not pv_ok:
-        logger.warning('pageview failed, skipping event', cid=_mask_cid(cid), event=event_action)
-        return False
-
+    """Send event directly — no pageview needed, user has active Metrika session."""
     return await _post_collect(_event_payload(cid, event_action), event_action, cid)
 
 
