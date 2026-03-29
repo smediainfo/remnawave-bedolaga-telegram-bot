@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import structlog
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import func, or_, select, text as sa_text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -358,6 +358,7 @@ async def fulfill_purchase(
             # Active subscription or gift with any existing subscription — hold for manual activation
             purchase.status = GuestPurchaseStatus.PENDING_ACTIVATION.value
             purchase.user_id = user.id
+            await _backfill_payment_user_id(db, purchase, user.id)
             if recipient_type == 'email' and not purchase.is_gift and is_new_account:
                 purchase.auto_login_token = create_auto_login_token(user.id)
             await db.commit()
@@ -439,6 +440,7 @@ async def fulfill_purchase(
         purchase.status = GuestPurchaseStatus.DELIVERED.value
         purchase.user_id = user.id
         purchase.delivered_at = datetime.now(UTC)
+        await _backfill_payment_user_id(db, purchase, user.id)
         if recipient_type == 'email' and not purchase.is_gift and is_new_account:
             purchase.auto_login_token = create_auto_login_token(user.id)
 
@@ -510,6 +512,49 @@ async def fulfill_purchase(
         raise GuestPurchaseError('Purchase fulfillment failed', status_code=500)
 
     return purchase
+
+
+async def _backfill_payment_user_id(db: AsyncSession, purchase: 'GuestPurchase', user_id: int) -> None:
+    """Backfill user_id into the provider payment record after guest user creation.
+
+    Guest purchases create the payment record before the user exists,
+    so user_id is NULL. This links the payment to the user for admin UI.
+    """
+    if not purchase.payment_id or not user_id:
+        return
+    base_method = _resolve_base_payment_method(purchase.payment_method)
+    table_map = {
+        'kassa_ai': 'kassa_ai_payments',
+        'freekassa': 'freekassa_payments',
+        'wata': 'wata_payments',
+        'unitpay': 'unitpay_payments',
+        'yookassa': 'yookassa_payments',
+        'cloudpayments': 'cloudpayments_payments',
+        'cryptobot': 'cryptobot_payments',
+        'platega': 'platega_payments',
+        'heleket': 'heleket_payments',
+        'mulenpay': 'mulenpay_payments',
+        'riopay': 'riopay_payments',
+        'severpay': 'severpay_payments',
+        'pal24': 'pal24_payments',
+    }
+    table = table_map.get(base_method)
+    if not table:
+        return
+    try:
+        # Use kassa_ai_order_id for kassa_ai, order_id for others
+        if base_method == 'kassa_ai':
+            await db.execute(
+                sa_text(f'UPDATE {table} SET user_id = :uid WHERE kassa_ai_order_id = :pid AND user_id IS NULL'),
+                {'uid': user_id, 'pid': int(purchase.payment_id)},
+            )
+        else:
+            await db.execute(
+                sa_text(f'UPDATE {table} SET user_id = :uid WHERE order_id = :pid AND user_id IS NULL'),
+                {'uid': user_id, 'pid': purchase.payment_id},
+            )
+    except Exception as e:
+        logger.debug('Could not backfill payment user_id', error=e, method=base_method)
 
 
 def _resolve_base_payment_method(method_str: str | None) -> str:
@@ -1137,6 +1182,7 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
         purchase.subscription_crypto_link = subscription.subscription_crypto_link
         purchase.status = GuestPurchaseStatus.DELIVERED.value
         purchase.delivered_at = datetime.now(UTC)
+        await _backfill_payment_user_id(db, purchase, user.id)
         if user.auth_type == 'email' and not purchase.is_gift and is_new_account:
             purchase.auto_login_token = create_auto_login_token(user.id)
 
