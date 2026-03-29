@@ -306,7 +306,7 @@ async def _search_cryptobot(db: AsyncSession, params: SearchParams) -> list[Pend
             identifier=payment.invoice_id,
             amount_kopeks=amount_kopeks,
             status=payment.status or '',
-            is_paid=bool(payment.is_paid),
+            is_paid=(payment.status == 'paid'),
         )
         if record:
             records.append(record)
@@ -339,7 +339,7 @@ async def _search_heleket(db: AsyncSession, params: SearchParams) -> list[Pendin
             identifier=payment.uuid,
             amount_kopeks=payment.amount_kopeks,
             status=payment.status or '',
-            is_paid=bool(payment.is_paid),
+            is_paid=(payment.status == 'paid'),
             expires_at=getattr(payment, 'expires_at', None),
         )
         if record:

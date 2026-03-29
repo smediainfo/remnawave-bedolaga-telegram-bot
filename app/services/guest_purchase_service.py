@@ -523,6 +523,7 @@ async def _backfill_payment_user_id(db: AsyncSession, purchase: 'GuestPurchase',
     if not purchase.payment_id or not user_id:
         return
     base_method = _resolve_base_payment_method(purchase.payment_method)
+    logger.info("backfill_payment_user_id called", user_id=user_id, payment_id=purchase.payment_id, method=base_method)
     table_map = {
         'kassa_ai': 'kassa_ai_payments',
         'freekassa': 'freekassa_payments',
@@ -542,19 +543,28 @@ async def _backfill_payment_user_id(db: AsyncSession, purchase: 'GuestPurchase',
     if not table:
         return
     try:
-        # Use kassa_ai_order_id for kassa_ai, order_id for others
-        if base_method == 'kassa_ai':
-            await db.execute(
-                sa_text(f'UPDATE {table} SET user_id = :uid WHERE kassa_ai_order_id = :pid AND user_id IS NULL'),
-                {'uid': user_id, 'pid': int(purchase.payment_id)},
-            )
-        else:
-            await db.execute(
-                sa_text(f'UPDATE {table} SET user_id = :uid WHERE order_id = :pid AND user_id IS NULL'),
-                {'uid': user_id, 'pid': purchase.payment_id},
-            )
+        pid = str(purchase.payment_id)
+        # Each provider stores the payment ID in a different column
+        id_column_map = {
+            'kassa_ai': 'kassa_ai_order_id',
+            'wata': 'payment_link_id',
+            'unitpay': 'unitpay_payment_id',
+            'freekassa': 'freekassa_order_id',
+            'yookassa': 'yookassa_payment_id',
+            'cloudpayments': 'invoice_id',
+            'cryptobot': 'invoice_id',
+            'mulenpay': 'mulen_payment_id',
+            'riopay': 'riopay_order_id',
+        }
+        id_column = id_column_map.get(base_method, 'order_id')
+        result = await db.execute(
+            sa_text(f'UPDATE {table} SET user_id = :uid WHERE {id_column} = :pid AND user_id IS NULL'),
+            {'uid': user_id, 'pid': pid},
+        )
+        if result.rowcount:
+            logger.info('backfill payment user_id OK', method=base_method, user_id=user_id)
     except Exception as e:
-        logger.debug('Could not backfill payment user_id', error=e, method=base_method)
+        logger.warning('Could not backfill payment user_id', error=e, method=base_method)
 
 
 def _resolve_base_payment_method(method_str: str | None) -> str:
@@ -1675,6 +1685,7 @@ async def _check_and_recover_pending_purchase(
 
     # Resolve base method: 'yookassa_sbp' → 'yookassa', 'kassa_ai' stays 'kassa_ai'
     base_method = _resolve_base_payment_method(payment_method)
+    logger.info("backfill_payment_user_id called", user_id=user_id, payment_id=purchase.payment_id, method=base_method)
 
     match = await _find_succeeded_provider_payment(db, base_method, purchase_token)
     if match is None:
