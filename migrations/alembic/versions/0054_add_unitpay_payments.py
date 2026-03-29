@@ -17,6 +17,11 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    from sqlalchemy import inspect as sa_inspect
+    bind = op.get_bind()
+    inspector = sa_inspect(bind)
+    if 'unitpay_payments' in inspector.get_table_names():
+        return
     op.create_table(
         'unitpay_payments',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
