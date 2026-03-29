@@ -1328,6 +1328,7 @@ class User(Base):
 
     # Партнёрская система
     partner_status = Column(String(20), default=PartnerStatus.NONE.value, nullable=False, index=True)
+    landing_referrer = Column(String(500), nullable=True)  # Referrer URL from landing page
 
     @property
     def is_partner(self) -> bool:

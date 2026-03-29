@@ -5,7 +5,7 @@ import time
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -354,6 +354,7 @@ async def create_topup(
                 'user_username': user.username or '',
                 'purpose': 'balance_topup',
                 'source': 'cabinet',
+                'referrer': request.referrer or '',
             }
 
             # Use payment_option to select card or sbp (default: card)
@@ -1388,3 +1389,19 @@ async def delete_saved_card(
         )
 
     return {'success': True, 'message': 'Card unlinked successfully'}
+
+
+@router.post('/referrer')
+async def save_referrer(
+    request: Request,
+    user: User = Depends(get_current_cabinet_user),
+    db: AsyncSession = Depends(get_cabinet_db),
+):
+    """Save landing referrer for the current user (first visit only)."""
+    body = await request.json()
+    referrer = (body.get('referrer') or '')[:500]
+    if referrer and not user.landing_referrer:
+        user.landing_referrer = referrer
+        await db.commit()
+        return {'status': 'saved', 'referrer': referrer}
+    return {'status': 'skipped', 'existing': user.landing_referrer or ''}

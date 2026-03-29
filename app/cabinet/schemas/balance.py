@@ -66,6 +66,7 @@ class TopUpRequest(BaseModel):
     payment_method: str = Field(..., description='Payment method ID')
     payment_option: str | None = Field(None, description='Payment option (e.g. Platega method code)')
     language: str | None = Field(None, max_length=5, description='UI language (ru, en, zh, fa)')
+    referrer: str | None = Field(None, max_length=500, description="Landing page referrer URL")
 
 
 class TopUpResponse(BaseModel):
