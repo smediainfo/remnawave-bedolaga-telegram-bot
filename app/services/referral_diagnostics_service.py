@@ -18,6 +18,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.crud.referral import create_referral_earning, get_user_campaign_id
 from app.database.crud.user import add_user_balance
 from app.database.models import ReferralEarning, User
@@ -339,7 +340,11 @@ class ReferralDiagnosticsService:
 
     async def analyze_today(self, db: AsyncSession) -> DiagnosticReport:
         """Анализирует реферальные события за сегодня."""
-        today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError):
+            _srv_tz = ZoneInfo('UTC')
+        today = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         tomorrow = today + timedelta(days=1)
         return await self.analyze_period(db, today, tomorrow)
 

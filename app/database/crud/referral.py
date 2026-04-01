@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import structlog
 from sqlalchemy import and_, func, select
@@ -106,7 +107,7 @@ async def get_referral_earnings_sum(
     return result.scalar() or 0
 
 
-async def get_referral_statistics(db: AsyncSession) -> dict:
+async def get_referral_statistics(db: AsyncSession, tz: str | None = None) -> dict:
     users_with_referrals_result = await db.execute(
         select(func.count(func.distinct(User.id))).where(User.referred_by_id.isnot(None))
     )
@@ -184,7 +185,11 @@ async def get_referral_statistics(db: AsyncSession) -> dict:
                 }
             )
 
-    today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _user_tz = ZoneInfo(tz) if tz else ZoneInfo('UTC')
+    except (KeyError, ValueError):
+        _user_tz = ZoneInfo('UTC')
+    today = datetime.now(_user_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
     today_earnings_result = await db.execute(
         select(func.coalesce(func.sum(ReferralEarning.amount_kopeks), 0)).where(ReferralEarning.created_at >= today)

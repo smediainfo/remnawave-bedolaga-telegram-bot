@@ -3,6 +3,8 @@ CRUD операции для колеса удачи (Fortune Wheel).
 """
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
+from app.config import settings
 from typing import Any
 
 import structlog
@@ -227,7 +229,11 @@ async def mark_spin_applied(db: AsyncSession, spin_id: int) -> WheelSpin | None:
 
 async def get_user_spins_today(db: AsyncSession, user_id: int) -> int:
     """Получить количество спинов пользователя за сегодня."""
-    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _srv_tz = ZoneInfo(settings.TIMEZONE)
+    except (KeyError, ValueError):
+        _srv_tz = ZoneInfo('UTC')
+    today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
     result = await db.execute(
         select(func.count(WheelSpin.id)).where(

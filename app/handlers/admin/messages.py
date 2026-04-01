@@ -11,6 +11,7 @@ from sqlalchemy.exc import InterfaceError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.crud.subscription import get_expiring_subscriptions
 from app.database.crud.tariff import get_all_tariffs
 from app.database.crud.user import get_users_list
@@ -1707,7 +1708,11 @@ async def get_target_users_count(db: AsyncSession, target: str) -> int:
     # Custom filters — быстрый COUNT вместо загрузки всех пользователей
     if target.startswith('custom_'):
         now = datetime.now(UTC)
-        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError):
+            _srv_tz = ZoneInfo('UTC')
+        today = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         criteria = target[len('custom_') :]
 
         if criteria == 'today':
@@ -1922,7 +1927,11 @@ async def get_custom_users_count(db: AsyncSession, criteria: str) -> int:
 
 async def get_custom_users(db: AsyncSession, criteria: str) -> list:
     now = datetime.now(UTC)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _srv_tz = ZoneInfo(settings.TIMEZONE)
+    except (KeyError, ValueError):
+        _srv_tz = ZoneInfo('UTC')
+    today = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
 
@@ -1951,7 +1960,11 @@ async def get_custom_users(db: AsyncSession, criteria: str) -> list:
 
 async def get_users_statistics(db: AsyncSession) -> dict:
     now = datetime.now(UTC)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _srv_tz = ZoneInfo(settings.TIMEZONE)
+    except (KeyError, ValueError):
+        _srv_tz = ZoneInfo('UTC')
+    today = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
     week_ago = now - timedelta(days=7)
     month_ago = now - timedelta(days=30)
 
