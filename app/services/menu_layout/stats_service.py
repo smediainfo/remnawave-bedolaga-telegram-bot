@@ -9,6 +9,7 @@ from sqlalchemy import Integer, and_, case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.models import ButtonClickLog
 
 
@@ -97,7 +98,11 @@ class MenuLayoutStatsService:
     ) -> dict[str, Any]:
         """Получить статистику кликов по конкретной кнопке."""
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError):
+            _srv_tz = ZoneInfo('UTC')
+        today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=days)
 
@@ -184,7 +189,11 @@ class MenuLayoutStatsService:
     ) -> list[dict[str, Any]]:
         """Получить статистику по всем кнопкам."""
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError):
+            _srv_tz = ZoneInfo('UTC')
+        today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=days)
 

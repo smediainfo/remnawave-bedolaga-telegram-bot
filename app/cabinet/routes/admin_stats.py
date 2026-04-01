@@ -652,13 +652,14 @@ async def _get_tariff_stats(db: AsyncSession, tz: str | None = None) -> TariffSt
 @router.get('/referrals/top', response_model=TopReferrersResponse)
 async def get_top_referrers(
     limit: int = 20,
+    tz: str | None = Query(None, description='Browser timezone (e.g. Europe/Moscow)'),
     admin: User = Depends(require_permission('stats:read')),
     db: AsyncSession = Depends(get_cabinet_db),
 ):
     """Get top referrers with earnings breakdown by period."""
     try:
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = _today_start_utc(tz)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
 
@@ -878,13 +879,14 @@ async def get_top_campaigns(
 @router.get('/payments/recent', response_model=RecentPaymentsResponse)
 async def get_recent_payments(
     limit: int = 50,
+    tz: str | None = Query(None, description='Browser timezone (e.g. Europe/Moscow)'),
     admin: User = Depends(require_permission('stats:read')),
     db: AsyncSession = Depends(get_cabinet_db),
 ):
     """Get recent payments with user info."""
     try:
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = _today_start_utc(tz)
         week_ago = now - timedelta(days=7)
 
         # Get recent transactions (deposits and subscription payments)

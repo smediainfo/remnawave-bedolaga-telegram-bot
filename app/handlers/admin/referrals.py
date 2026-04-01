@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.crud.referral import (
     get_referral_statistics,
     get_top_referrers_by_period,
@@ -664,7 +665,11 @@ async def process_test_referral_earning(message: types.Message, db_user: User, d
 def _get_period_dates(period: str) -> tuple[datetime, datetime]:
     """Возвращает начальную и конечную даты для заданного периода."""
     now = datetime.now(UTC)
-    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _srv_tz = ZoneInfo(settings.TIMEZONE)
+    except (KeyError, ValueError):
+        _srv_tz = ZoneInfo('UTC')
+    today = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
     if period == 'today':
         start_date = today

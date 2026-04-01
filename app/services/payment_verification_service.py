@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.database import AsyncSessionLocal
 from app.database.models import (
     CloudPaymentsPayment,
@@ -822,7 +823,11 @@ async def list_recent_pending_payments(
     """Return pending payments (top-ups) from supported providers within the age window."""
 
     # Use start of today
-    cutoff = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        _srv_tz = ZoneInfo(settings.TIMEZONE)
+    except (KeyError, ValueError):
+        _srv_tz = ZoneInfo('UTC')
+    cutoff = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
 
     tasks: Iterable[list[PendingPayment]] = (
         await _fetch_yookassa_payments(db, cutoff),

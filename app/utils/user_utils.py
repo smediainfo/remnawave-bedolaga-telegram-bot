@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
+from zoneinfo import ZoneInfo
 from app.database.models import ReferralEarning, Subscription, SubscriptionStatus, Transaction, TransactionType, User
 
 
@@ -282,11 +283,16 @@ async def get_detailed_referral_list(db: AsyncSession, user_id: int, limit: int 
         }
 
 
-async def get_referral_analytics(db: AsyncSession, user_id: int) -> dict:
+async def get_referral_analytics(db: AsyncSession, user_id: int, tz: str | None = None) -> dict:
     try:
         now = datetime.now(UTC)
+        try:
+            _user_tz = ZoneInfo(tz) if tz else ZoneInfo('UTC')
+        except (KeyError, ValueError):
+            _user_tz = ZoneInfo('UTC')
+        _today_start = datetime.now(_user_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         periods = {
-            'today': now.replace(hour=0, minute=0, second=0, microsecond=0),
+            'today': _today_start,
             'week': now - timedelta(days=7),
             'month': now - timedelta(days=30),
             'quarter': now - timedelta(days=90),

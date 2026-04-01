@@ -9,6 +9,8 @@ import structlog
 from sqlalchemy import and_, case, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from zoneinfo import ZoneInfo
+from app.config import settings
 from app.database.crud.transaction import REAL_PAYMENT_METHODS
 from app.database.models import (
     AdvertisingCampaignRegistration,
@@ -45,10 +47,15 @@ class PartnerStatsService:
         cls,
         db: AsyncSession,
         user_id: int,
+        tz: str | None = None,
     ) -> dict[str, Any]:
         """Получить детальную статистику реферера."""
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(tz) if tz else ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError, NameError):
+            _srv_tz = ZoneInfo('UTC')
+        today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
         year_ago = now - timedelta(days=365)
@@ -362,10 +369,15 @@ class PartnerStatsService:
         cls,
         db: AsyncSession,
         days: int = 30,
+        tz: str | None = None,
     ) -> dict[str, Any]:
         """Глобальная статистика партнёрской программы."""
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(tz) if tz else ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError, NameError):
+            _srv_tz = ZoneInfo('UTC')
+        today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         week_ago = now - timedelta(days=7)
         month_ago = now - timedelta(days=30)
         year_ago = now - timedelta(days=365)
@@ -666,10 +678,15 @@ class PartnerStatsService:
         db: AsyncSession,
         user_id: int,
         campaign_id: int,
+        tz: str | None = None,
     ) -> dict[str, Any]:
         """Detailed stats for a single campaign owned by the partner."""
         now = datetime.now(UTC)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        try:
+            _srv_tz = ZoneInfo(tz) if tz else ZoneInfo(settings.TIMEZONE)
+        except (KeyError, ValueError, NameError):
+            _srv_tz = ZoneInfo('UTC')
+        today_start = datetime.now(_srv_tz).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         week_ago = now - timedelta(days=PERIOD_COMPARISON_DAYS)
         month_ago = now - timedelta(days=DAILY_STATS_DAYS)
 

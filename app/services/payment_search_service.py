@@ -818,6 +818,7 @@ async def search_payments_stats(
         period=params.period,
         date_from=params.date_from,
         date_to=params.date_to,
+        tz=params.tz,
         page=1,
         per_page=MAX_PER_PAGE,
     )
