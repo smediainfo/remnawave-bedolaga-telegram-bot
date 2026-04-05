@@ -649,13 +649,6 @@ async def create_landing_purchase(
         commit=False,
     )
 
-<<<<<<< HEAD
-=======
-    # Save referrer from request body (document.referrer captured on page load)
-    if body.referrer:
-        purchase.referrer = body.referrer
-
->>>>>>> d941421f (feat: referrer from document.referrer + yandex_cid cache in purchase)
     # Determine return URL: per-method override → default cabinet URL
     cabinet_base = (settings.CABINET_URL or '').rstrip('/')
     default_return_url = f'{cabinet_base}/buy/success/{purchase.token}'
