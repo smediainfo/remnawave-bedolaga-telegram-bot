@@ -190,6 +190,7 @@ async def create_trial_subscription(
         logger.info(
             '🎁 Обновлена PENDING триальная подписка для пользователя', existing_id=existing.id, user_id=user_id
         )
+        _fire_yandex_trial_event(existing.user_id)
         return existing
 
     short_id = await generate_unique_short_id(db)
@@ -237,7 +238,26 @@ async def create_trial_subscription(
                 error=error,
             )
 
+    _fire_yandex_trial_event(subscription.user_id)
     return subscription
+
+
+def _fire_yandex_trial_event(user_id: int) -> None:
+    """Fire Yandex Metrika trial-add event in background.
+
+    Central hook for ALL trial activation paths (Telegram bot, cabinet, webapi,
+    miniapp, promocode, admin panel, …). Uses spawn_bg: fire-and-forget with
+    its own DB session, doesn't block the caller or affect the current txn.
+    Silently no-op if Yandex offline-conv service is disabled or import fails.
+    Mirrors the pattern used by guest_purchase_service for registration/purchase
+    events — this is the single choke point for trial activation.
+    """
+    try:
+        from app.services import yandex_offline_conv_service as yandex_conv
+
+        yandex_conv.spawn_bg(yandex_conv.fire_trial_bg(user_id))
+    except Exception as error:
+        logger.debug('Yandex trial-add hook skipped', user_id=user_id, error=error)
 
 
 async def create_paid_subscription(
