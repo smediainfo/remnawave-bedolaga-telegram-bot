@@ -40,13 +40,14 @@ async def _finalize_oauth_login(
     provider: str,
     campaign_slug: str | None = None,
     referral_code: str | None = None,
+    yandex_cid: str | None = None,
     *,
     is_new_user: bool = False,
 ) -> AuthResponse:
     """Update last login, create tokens, store refresh token."""
     user.cabinet_last_login = datetime.now(UTC)
     await db.commit()
-    auth_response = await _create_auth_response(user, db)
+    auth_response = await _create_auth_response(user, db, yandex_cid=yandex_cid)
     await _store_refresh_token(db, user.id, auth_response.refresh_token, device_info=f'oauth:{provider}')
 
     # Process referral code (only for new users — existing users cannot be assigned a referrer)
@@ -86,6 +87,9 @@ class OAuthCallbackRequest(BaseModel):
     )
     referral_code: str | None = Field(
         None, max_length=32, pattern=r'^[a-zA-Z0-9_-]+$', description='Referral code of inviter'
+    )
+    yandex_cid: str | None = Field(
+        None, max_length=128, pattern=r'^[A-Za-z0-9._:-]{4,128}$', description='Yandex Metrika ClientID for offline conversion tracking'
     )
 
 
@@ -186,7 +190,9 @@ async def oauth_callback(
     user = await get_user_by_oauth_provider(db, provider, user_info.provider_id)
     if user:
         logger.info('OAuth login for existing user', provider=provider, user_id=user.id)
-        return await _finalize_oauth_login(db, user, provider, request.campaign_slug, request.referral_code)
+        return await _finalize_oauth_login(
+            db, user, provider, request.campaign_slug, request.referral_code, request.yandex_cid
+        )
 
     # 6. Find user by email (if verified) and link provider
     if user_info.email and user_info.email_verified:
@@ -194,7 +200,9 @@ async def oauth_callback(
         if user:
             await set_user_oauth_provider_id(db, user, provider, user_info.provider_id)
             logger.info('OAuth provider linked to existing email user', provider=provider, user_id=user.id)
-            return await _finalize_oauth_login(db, user, provider, request.campaign_slug, request.referral_code)
+            return await _finalize_oauth_login(
+                db, user, provider, request.campaign_slug, request.referral_code, request.yandex_cid
+            )
 
     # 7. Resolve referral code for new user
     referrer_id = None
@@ -248,5 +256,5 @@ async def oauth_callback(
             logger.warning('Failed to sync panel subscription for new OAuth user', user_id=user.id, exc_info=True)
 
     return await _finalize_oauth_login(
-        db, user, provider, request.campaign_slug, request.referral_code, is_new_user=True
+        db, user, provider, request.campaign_slug, request.referral_code, request.yandex_cid, is_new_user=True
     )
