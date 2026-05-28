@@ -125,26 +125,37 @@ async def create_saved_payment_method(
     )
 
     db.add(method)
-    try:
-        if commit:
+    if commit:
+        try:
             await db.commit()
-        else:
-            await db.flush()
-    except IntegrityError as e:
-        # Must rollback in BOTH paths — otherwise the session is poisoned
-        # (PostgreSQL aborts the transaction on IntegrityError, any subsequent
-        # statement raises PendingRollbackError). For commit=False the caller
-        # owns the transaction and will get the error on its next operation,
-        # so we still need to roll back here to keep the session usable.
-        await db.rollback()
-        logger.error(
-            'Ошибка создания сохранённого метода оплаты',
-            provider=provider_name,
-            provider_token=token,
-            user_id=user_id,
-            e=e,
-        )
-        return None
+        except IntegrityError as e:
+            await db.rollback()
+            logger.error(
+                'Ошибка создания сохранённого метода оплаты',
+                provider=provider_name,
+                provider_token=token,
+                user_id=user_id,
+                e=e,
+            )
+            return None
+    else:
+        # Caller owns the outer transaction (e.g. the EtoPlatezhi webhook holds a
+        # FOR UPDATE lock and already flushed payment.is_paid). Isolate the INSERT
+        # in a SAVEPOINT so a unique-violation rolls back only this statement
+        # instead of discarding the caller's mutations / releasing its lock.
+        try:
+            async with db.begin_nested():
+                await db.flush()
+        except IntegrityError as e:
+            db.expunge(method)
+            logger.error(
+                'Ошибка создания сохранённого метода оплаты',
+                provider=provider_name,
+                provider_token=token,
+                user_id=user_id,
+                e=e,
+            )
+            return None
     await db.refresh(method)
 
     logger.info(

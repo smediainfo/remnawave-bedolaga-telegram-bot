@@ -132,6 +132,7 @@ class PurchaseRequest(BaseModel):
     gift_message: str | None = Field(default=None, max_length=1000)
     yandex_cid: str | None = Field(default=None, max_length=128, pattern=r'^[A-Za-z0-9._:-]{4,128}$')
     referrer: str | None = Field(default=None, max_length=500)
+    referrer_code: str | None = Field(default=None, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
     subid: str | None = Field(default=None, max_length=255)
 
     @model_validator(mode='after')
@@ -333,6 +334,7 @@ async def _load_landing_tariffs(
     trial_enabled = bool(settings.TRIAL_PAYMENT_ENABLED and settings.TRIAL_ACTIVATION_PRICE > 0)
     trial_days = settings.TRIAL_DURATION_DAYS if trial_enabled else None
     trial_price = settings.TRIAL_ACTIVATION_PRICE if trial_enabled else 0
+    trial_added = False
 
     for tariff in tariffs:
         # Determine which periods to show
@@ -347,8 +349,8 @@ async def _load_landing_tariffs(
         # Prepend trial period (only on first eligible tariff to avoid duplicates).
         # If admin set an allowed_periods override for this tariff and trial_days
         # is NOT in the override, the trial is suppressed on this landing.
-        trial_allowed_for_this_tariff = tariff_period_override is None or trial_days in tariff_period_override
-        if trial_enabled and not landing_tariffs and trial_allowed_for_this_tariff:
+        trial_allowed_for_this_tariff = tariff.is_trial_available and (tariff_period_override is None or trial_days in tariff_period_override)
+        if trial_enabled and not trial_added and trial_allowed_for_this_tariff:
             periods.append(
                 LandingTariffPeriod(
                     days=trial_days,
@@ -361,6 +363,7 @@ async def _load_landing_tariffs(
                     is_trial=True,
                 )
             )
+            trial_added = True
 
         for days in period_days_list:
             price = tariff.get_price_for_period(days)
@@ -696,6 +699,7 @@ async def create_landing_purchase(
         gift_message=body.gift_message,
         subid=body.subid,
         referrer=body.referrer,
+        referrer_code=body.referrer_code,
         commit=False,
     )
 

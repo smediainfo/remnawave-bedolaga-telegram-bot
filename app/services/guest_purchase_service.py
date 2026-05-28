@@ -163,6 +163,7 @@ async def create_purchase(
     source: str = 'landing',
     subid: str | None = None,
     referrer: str | None = None,
+    referrer_code: str | None = None,
     buyer_user_id: int | None = None,
     commit: bool = True,
 ) -> GuestPurchase:
@@ -172,6 +173,7 @@ async def create_purchase(
         commit=commit,
         subid=subid,
         referrer=referrer,
+        referrer_code=referrer_code,
         landing_id=landing.id if landing else None,
         tariff_id=tariff.id,
         period_days=period_days,
@@ -642,6 +644,15 @@ async def fulfill_purchase(
             except Exception:
                 logger.exception('Failed to create transaction for guest purchase', purchase_id=purchase.id)
 
+            # Auto-commission to referrer (landing-flow has no deposit, so process_referral_topup
+            # doesn't fire — we trigger process_referral_purchase explicitly here).
+            if transaction and user.referred_by_id:
+                try:
+                    from app.services.referral_service import process_referral_purchase
+                    await process_referral_purchase(db, user.id, purchase.amount_kopeks, transaction_id=transaction.id)
+                except Exception:
+                    logger.exception('Failed referral commission on landing purchase', user_id=user.id, purchase_id=purchase.id)
+
         # Save Yandex CID from Redis → DB (enables on_registration/on_purchase to use it)
         try:
             from app.services import yandex_offline_conv_service as yandex_conv
@@ -791,6 +802,28 @@ def _mask_email(email: str) -> str:
     return f'{local}@{domain}.{tld}'
 
 
+async def _resolve_referrer_code(db: AsyncSession, user: User, purchase: 'GuestPurchase | None') -> None:
+    """Resolve a landing ``?ref=`` code to a partner and set ``user.referred_by_id``.
+
+    Skipped for gift purchases: the buyer's ``?ref=`` must not taint the recipient,
+    who would otherwise credit that partner on any future top-up even though no
+    commission was earned on the gift itself.
+    """
+    if not purchase or not purchase.referrer_code or user.referred_by_id or purchase.is_gift:
+        return
+    ref_user = (
+        await db.execute(select(User).where(User.referral_code == purchase.referrer_code))
+    ).scalars().first()
+    if ref_user and ref_user.id != user.id:
+        user.referred_by_id = ref_user.id
+        logger.info(
+            'Referrer resolved from gp.referrer_code',
+            user_id=user.id,
+            referrer_id=ref_user.id,
+            code=purchase.referrer_code,
+        )
+
+
 async def _find_or_create_user(
     db: AsyncSession,
     contact_type: Literal['email', 'telegram'],
@@ -859,6 +892,7 @@ async def _find_or_create_user(
             async with db.begin_nested():
                 db.add(user)
                 await db.flush()
+                await _resolve_referrer_code(db, user, purchase)
         except IntegrityError:
             result = await db.execute(select(User).where(User.email == contact_value))
             user = result.scalars().first()
@@ -961,6 +995,7 @@ async def _find_or_create_user(
         async with db.begin_nested():
             db.add(user)
             await db.flush()
+            await _resolve_referrer_code(db, user, purchase)
     except IntegrityError:
         if resolved_telegram_id:
             result = await db.execute(select(User).where(User.telegram_id == resolved_telegram_id))
@@ -1274,8 +1309,6 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
         and purchase.period_days == settings.TRIAL_DURATION_DAYS
     )
     if is_trial_purchase:
-        from app.database.crud.subscription import get_subscription_by_user_id
-
         _existing = await get_subscription_by_user_id(db, user.id)
         _existing_trial_alive = (
             _existing is not None
@@ -1412,9 +1445,10 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
         # Create transaction so promo group auto-assignment and contest tracking work.
         # Skip for gift recipients — they didn't pay, so their spending shouldn't be inflated.
         if not purchase.is_gift:
+            _activation_tx = None
             try:
                 payment_method_enum = _resolve_payment_method(purchase.payment_method)
-                await create_transaction(
+                _activation_tx = await create_transaction(
                     db=db,
                     user_id=user.id,
                     type=TransactionType.SUBSCRIPTION_PAYMENT,
@@ -1426,6 +1460,13 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
                 )
             except Exception:
                 logger.exception('Failed to create transaction for activated purchase', purchase_id=purchase.id)
+
+            if _activation_tx and user.referred_by_id:
+                try:
+                    from app.services.referral_service import process_referral_purchase
+                    await process_referral_purchase(db, user.id, purchase.amount_kopeks, transaction_id=_activation_tx.id)
+                except Exception:
+                    logger.exception('Failed referral commission on activated landing purchase', user_id=user.id, purchase_id=purchase.id)
 
         if not skip_notification:
             try:
@@ -1457,8 +1498,9 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
         await db.rollback()
         raise
     except Exception:
+        purchase_id_snapshot = purchase.id
         await db.rollback()
-        logger.exception('Failed to activate purchase', purchase_id=purchase.id)
+        logger.exception('Failed to activate purchase', purchase_id=purchase_id_snapshot)
         raise GuestPurchaseError('Activation failed, please try again', status_code=500)
 
     return purchase
