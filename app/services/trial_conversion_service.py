@@ -125,9 +125,9 @@ _TRIAL_CONVERSION_BATCH_LIMIT = 500
 
 
 async def _find_trials_for_conversion(db: AsyncSession) -> list[Subscription]:
-    """Триалы с autopay_enabled, истекающие в ближайшие 12ч.
+    """Триалы с autopay_enabled, истекающие в ближайшие 2ч.
 
-    Окно T-12h..T+0 от end_date. 1 попытка списания в день (idempotency_key
+    Окно T-2h..T+0 от end_date. 1 попытка списания в день (idempotency_key
     per-day). Если карта декларнула — триал кончится, юзер увидит "продлите"
     в кабинете.
 
@@ -136,7 +136,7 @@ async def _find_trials_for_conversion(db: AsyncSession) -> list[Subscription]:
     триалов в одном окне. Остаток подхватит следующий tick.
     """
     now = datetime.now(UTC)
-    horizon = now + timedelta(hours=12)
+    horizon = now + timedelta(hours=2)
 
     q = (
         select(Subscription)
