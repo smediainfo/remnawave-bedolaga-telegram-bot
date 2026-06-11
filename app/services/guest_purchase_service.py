@@ -664,9 +664,12 @@ async def fulfill_purchase(
             if transaction and user.referred_by_id:
                 try:
                     from app.services.referral_service import process_referral_purchase
+
                     await process_referral_purchase(db, user.id, purchase.amount_kopeks, transaction_id=transaction.id)
                 except Exception:
-                    logger.exception('Failed referral commission on landing purchase', user_id=user.id, purchase_id=purchase.id)
+                    logger.exception(
+                        'Failed referral commission on landing purchase', user_id=user.id, purchase_id=purchase.id
+                    )
 
         # Registration event (new accounts only) + S2S postback
         if is_new_account:
@@ -809,9 +812,7 @@ async def _resolve_referrer_code(db: AsyncSession, user: User, purchase: 'GuestP
     """
     if not purchase or not purchase.referrer_code or user.referred_by_id or purchase.is_gift:
         return
-    ref_user = (
-        await db.execute(select(User).where(User.referral_code == purchase.referrer_code))
-    ).scalars().first()
+    ref_user = (await db.execute(select(User).where(User.referral_code == purchase.referrer_code))).scalars().first()
     if ref_user and ref_user.id != user.id:
         user.referred_by_id = ref_user.id
         logger.info(
@@ -1476,9 +1477,16 @@ async def activate_purchase(db: AsyncSession, purchase_token: str, *, skip_notif
             if _activation_tx and user.referred_by_id:
                 try:
                     from app.services.referral_service import process_referral_purchase
-                    await process_referral_purchase(db, user.id, purchase.amount_kopeks, transaction_id=_activation_tx.id)
+
+                    await process_referral_purchase(
+                        db, user.id, purchase.amount_kopeks, transaction_id=_activation_tx.id
+                    )
                 except Exception:
-                    logger.exception('Failed referral commission on activated landing purchase', user_id=user.id, purchase_id=purchase.id)
+                    logger.exception(
+                        'Failed referral commission on activated landing purchase',
+                        user_id=user.id,
+                        purchase_id=purchase.id,
+                    )
 
         if not skip_notification:
             try:
