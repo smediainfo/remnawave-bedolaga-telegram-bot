@@ -134,6 +134,7 @@ class PurchaseRequest(BaseModel):
     referrer: str | None = Field(default=None, max_length=500)
     referrer_code: str | None = Field(default=None, max_length=64, pattern=r'^[A-Za-z0-9_-]+$')
     subid: str | None = Field(default=None, max_length=255)
+    yclid: str | None = Field(default=None, max_length=64, pattern=r'^[0-9]{1,64}$')
 
     @model_validator(mode='after')
     def validate_contacts(self) -> 'PurchaseRequest':
@@ -756,6 +757,13 @@ async def create_landing_purchase(
     if body.yandex_cid and settings.YANDEX_OFFLINE_CONV_ENABLED:
         try:
             await cache.set(f'yacid:purchase:{purchase.token}', body.yandex_cid, expire=86400)
+        except Exception:
+            pass
+
+    # Persist yclid in cache for the yclid-keyed offline conversion upload
+    if body.yclid and settings.YANDEX_OFFLINE_CONV_ENABLED:
+        try:
+            await cache.set(f'yclid:purchase:{purchase.token}', body.yclid, expire=86400)
         except Exception:
             pass
 
