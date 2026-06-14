@@ -64,6 +64,49 @@ def _recurring_method_code_from_payment(payment, payload):
     return None
 
 
+_REFUND_RAW_STATUSES = {'refunded', 'reversed', 'partially refunded'}
+_FULL_REFUND_STATUSES = {'refunded', 'reversed'}
+
+
+async def _revoke_access_on_refund(db, payment, etoplatezhi_status):
+    """Full refund/reversal -> disable Remnawave access + mark subscription
+    expired and stop autopay. Best-effort; never raises (webhook returns 200)."""
+    try:
+        from sqlalchemy import select
+
+        from app.database.crud.user import get_user_by_id
+        from app.database.models import Subscription
+        from app.services.subscription_service import SubscriptionService
+
+        user_id = getattr(payment, 'user_id', None)
+        if not user_id:
+            return
+        user = await get_user_by_id(db, user_id)
+        uuid = getattr(user, 'remnawave_uuid', None) if user else None
+        if uuid:
+            await SubscriptionService().disable_remnawave_user(uuid)
+        sub = (
+            await db.execute(select(Subscription).where(Subscription.user_id == user_id))
+        ).scalars().first()
+        if sub is not None:
+            sub.status = 'expired'
+            sub.autopay_enabled = False
+            sub.updated_at = datetime.now(UTC)
+            await db.flush()
+        logger.warning(
+            'Etoplatezhi refund: access revoked',
+            order_id=getattr(payment, 'order_id', None),
+            user_id=user_id,
+            etoplatezhi_status=etoplatezhi_status,
+        )
+    except Exception as e:
+        logger.error(
+            'Etoplatezhi refund: revoke failed',
+            error=e,
+            order_id=getattr(payment, 'order_id', None),
+        )
+
+
 class EtoplatezhiPaymentMixin:
     """Mixin для работы с платежами Etoplatezhi."""
 
@@ -255,6 +298,15 @@ class EtoplatezhiPaymentMixin:
             # Определяем is_paid по статусу
             is_confirmed = etoplatezhi_status == 'success'
 
+            # Diagnostic: log every incoming callback status so refund/reversal
+            # postbacks are observable (they arrive after is_paid and were
+            # previously dropped silently by the early-return below).
+            logger.info(
+                'Etoplatezhi callback received',
+                order_id=our_payment_id,
+                etoplatezhi_status=etoplatezhi_status,
+            )
+
             # Trial → paid auto-conversion: payment_id с префиксом trial_convert_
             # не имеет row в etoplatezhi_payments (charge инициируется через COF
             # endpoint, минуя Payment Page). Роутим в trial_conversion_service.
@@ -352,8 +404,11 @@ class EtoplatezhiPaymentMixin:
                 return False
             payment = locked
 
-            # Проверка дублирования (re-check from locked row)
-            if payment.is_paid:
+            # Проверка дублирования (re-check from locked row).
+            # Exception: refund/reversal postbacks arrive AFTER the payment is
+            # paid — must NOT short-circuit them, else refunds never revoke
+            # access. Refund statuses fall through to _revoke_access_on_refund.
+            if payment.is_paid and etoplatezhi_status not in _REFUND_RAW_STATUSES:
                 logger.info('Etoplatezhi callback: платеж уже обработан', order_id=payment.order_id)
                 return True
 
@@ -425,6 +480,10 @@ class EtoplatezhiPaymentMixin:
                 is_paid=False,
                 callback_payload=callback_payload,
             )
+
+            # Full refund / reversal -> revoke the user's access immediately.
+            if etoplatezhi_status in _FULL_REFUND_STATUSES:
+                await _revoke_access_on_refund(db, payment, etoplatezhi_status)
 
             return True
 
