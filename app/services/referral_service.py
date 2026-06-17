@@ -862,6 +862,9 @@ async def process_referral_purchase(
 
         commission_amount = int(purchase_amount_kopeks * commission_percent / 100)
 
+        if commission_amount > 0 and await _is_commission_limit_reached(db, referrer.id, user.id):
+            return True
+
         if commission_amount > 0:
             await add_user_balance(
                 db, referrer, commission_amount, f'Комиссия {commission_percent}% с покупки {user.full_name}', bot=bot
