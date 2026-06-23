@@ -424,12 +424,19 @@ class EtoplatezhiPaymentMixin:
             # Извлекаем сумму из callback: payment.sum.amount (в минорных единицах)
             sum_data = payment_data.get('sum', {})
 
+            # Сохраняем operation (code+message = причина деклайна) и recurring.
+            # Раньше выкидывались -> в БД был голый {"status":"error"} без причины.
+            operation_data = payload.get('operation') or {}
             callback_payload = {
                 'etoplatezhi_payment_id': etoplatezhi_payment_id,
                 'status': etoplatezhi_status,
                 'sum': sum_data,
                 'customer': payload.get('customer'),
                 'project_id': payload.get('project_id'),
+                'operation': operation_data,
+                'recurring': payload.get('recurring'),
+                'decline_code': operation_data.get('code'),
+                'decline_message': operation_data.get('message'),
             }
 
             # Проверка суммы ДО обновления статуса
