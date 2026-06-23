@@ -85,9 +85,7 @@ async def _revoke_access_on_refund(db, payment, etoplatezhi_status):
         uuid = getattr(user, 'remnawave_uuid', None) if user else None
         if uuid:
             await SubscriptionService().disable_remnawave_user(uuid)
-        sub = (
-            await db.execute(select(Subscription).where(Subscription.user_id == user_id))
-        ).scalars().first()
+        sub = (await db.execute(select(Subscription).where(Subscription.user_id == user_id))).scalars().first()
         if sub is not None:
             sub.status = 'expired'
             sub.autopay_enabled = False
@@ -152,7 +150,6 @@ class EtoplatezhiPaymentMixin:
             return None
 
         # Получаем telegram_id пользователя для order_id
-        payment_module = import_module('app.services.payment_service')
         if user_id is not None:
             tg_id = user_id  # всегда уникальный bot-id (был telegram_id=None у кабинет-юзеров -> customer None -> antifraud decline)
         else:
