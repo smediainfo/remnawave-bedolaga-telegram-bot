@@ -57,7 +57,7 @@ def upgrade() -> None:
             raise RuntimeError(
                 'Migration 0105 pre-flight failed: subscriptions.grace_candidate_reason is missing, '
                 'so upstream revisions 0095-0097 were skipped (custom v3.x chain revision-id '
-                "collision). Fix: `alembic stamp 0094 && alembic upgrade head` (or start the bot "
+                'collision). Fix: `alembic stamp 0094 && alembic upgrade head` (or start the bot '
                 'normally — run_alembic_upgrade() self-heals this automatically).'
             )
 
