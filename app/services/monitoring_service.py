@@ -386,6 +386,18 @@ class MonitoringService:
                             error=recurrent_error,
                             exc_info=True,
                         )
+                # Trial → paid auto-conversion (multi-provider через recurring/)
+                if settings.ENABLE_AUTOPAY:
+                    try:
+                        from app.services.trial_conversion_service import process_trial_conversions
+
+                        await process_trial_conversions(db)
+                    except Exception as trial_conv_error:
+                        logger.error(
+                            'Ошибка авто-конверсии триалов',
+                            error=trial_conv_error,
+                            exc_info=True,
+                        )
                 # Реконсилиация Platega SBP-подписок: страховка на случай потерянных
                 # коллбеков / зависших PENDING. Гейт внутри метода (PLATEGA_RECURRENT_ENABLED).
                 await self._reconcile_platega_subscriptions(db)

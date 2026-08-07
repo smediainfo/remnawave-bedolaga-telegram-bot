@@ -2003,6 +2003,7 @@ class EmailNotificationTemplates:
                 </div>
                 {creds_block_ru}
                 <p>Подписка активирована в вашем личном кабинете.</p>
+                <div class="highlight"><p><strong>📱 Как подключиться (2 минуты):</strong></p><p>1. Установите приложение: <a href="https://getwisp.top">Wisp</a>, <a href="https://incy.cc">Incy</a> или <a href="https://happ.info">Happ</a></p><p>2. Откройте личный кабинет (кнопка ниже) и скопируйте ссылку-подписку</p><p>3. Импортируйте ссылку в приложение — и всё работает</p><p>Что-то не выходит? Напишите в поддержку — поможем подключить.</p></div>
                 <p style="text-align: center;"><a href="{cabinet_url}" class="button">Перейти в личный кабинет</a></p>
             """,
             'en': f"""
@@ -2013,6 +2014,7 @@ class EmailNotificationTemplates:
                 </div>
                 {creds_block_en}
                 <p>Your subscription has been activated in your cabinet.</p>
+                <div class="highlight"><p><strong>📱 How to connect (2 minutes):</strong></p><p>1. Install the app: <a href="https://getwisp.top">Wisp</a>, <a href="https://incy.cc">Incy</a> or <a href="https://happ.info">Happ</a></p><p>2. Open your dashboard (button below) and copy your subscription link</p><p>3. Import the link into the app — done</p><p>Stuck? Contact support and we will help you connect.</p></div>
                 <p style="text-align: center;"><a href="{cabinet_url}" class="button">Go to Cabinet</a></p>
             """,
             'zh': f"""
@@ -2023,6 +2025,7 @@ class EmailNotificationTemplates:
                 </div>
                 {creds_block_zh}
                 <p>订阅已在您的个人中心激活。</p>
+                <div class="highlight"><p><strong>📱 如何连接（2分钟）：</strong></p><p>1. 安装应用：<a href="https://getwisp.top">Wisp</a>、<a href="https://incy.cc">Incy</a> 或 <a href="https://happ.info">Happ</a></p><p>2. 打开个人中心（下方按钮），复制订阅链接</p><p>3. 将链接导入应用即可</p><p>遇到问题？请联系客服，我们帮您连接。</p></div>
                 <p style="text-align: center;"><a href="{cabinet_url}" class="button">前往个人中心</a></p>
             """,
             'ua': f"""
@@ -2033,6 +2036,7 @@ class EmailNotificationTemplates:
                 </div>
                 {creds_block_ua}
                 <p>Підписка активована у вашому особистому кабінеті.</p>
+                <div class="highlight"><p><strong>📱 Як підключитися (2 хвилини):</strong></p><p>1. Встановіть застосунок: <a href="https://getwisp.top">Wisp</a>, <a href="https://incy.cc">Incy</a> або <a href="https://happ.info">Happ</a></p><p>2. Відкрийте особистий кабінет (кнопка нижче) і скопіюйте посилання-підписку</p><p>3. Імпортуйте посилання у застосунок — і все працює</p><p>Щось не виходить? Напишіть у підтримку — допоможемо підключити.</p></div>
                 <p style="text-align: center;"><a href="{cabinet_url}" class="button">Перейти до кабінету</a></p>
             """,
             'fa': f"""
@@ -2043,6 +2047,7 @@ class EmailNotificationTemplates:
                 </div>
                 {creds_block_fa}
                 <p>اشتراک شما در پنل کاربری فعال شده است.</p>
+                <div class="highlight"><p><strong>📱 نحوه اتصال (۲ دقیقه):</strong></p><p>۱. برنامه را نصب کنید: <a href="https://getwisp.top">Wisp</a>، <a href="https://incy.cc">Incy</a> یا <a href="https://happ.info">Happ</a></p><p>۲. پنل کاربری را باز کنید (دکمه پایین) و لینک اشتراک را کپی کنید</p><p>۳. لینک را در برنامه وارد کنید — تمام</p><p>مشکلی دارید؟ به پشتیبانی پیام دهید تا کمکتان کنیم.</p></div>
                 <p style="text-align: center;"><a href="{cabinet_url}" class="button">رفتن به پنل کاربری</a></p>
             """,
         }

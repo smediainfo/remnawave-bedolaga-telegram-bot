@@ -33,6 +33,55 @@ ETOPLATEZHI_STATUS_MAP: dict[str, tuple[str, bool]] = {
 }
 
 
+async def _send_trial_conv_email(db, subscription_id, success, amount_kopeks):
+    """Best-effort e-mail about a trial->paid auto-conversion (success/failure).
+
+    Trial conversion is otherwise silent: user takes a 1-rub trial and a day later
+    is charged full price with no notification. Notify e-mail users on success
+    (charged, extended) and failure (could not charge). Never raises into webhook.
+    """
+    try:
+        import asyncio as _aio
+
+        from sqlalchemy import select
+
+        from app.cabinet.services.email_service import email_service
+        from app.database.models import Subscription as _Sub, User as _User
+
+        if not email_service.is_configured():
+            return
+        sub = (await db.execute(select(_Sub).where(_Sub.id == subscription_id))).scalar_one_or_none()
+        if not sub:
+            return
+        user = (await db.execute(select(_User).where(_User.id == sub.user_id))).scalar_one_or_none()
+        email = getattr(user, 'email', None)
+        if not email:
+            return
+        if success:
+            end = sub.end_date.strftime('%d.%m.%Y') if getattr(sub, 'end_date', None) else ''
+            amount = f'{(amount_kopeks or 0) / 100:.0f}' if amount_kopeks else ''
+            subject = 'Подписка продлена — Matrixxx VPN'
+            body = (
+                '<p>Здравствуйте!</p>'
+                '<p>Ваш пробный период автоматически продлён до полной подписки.</p>'
+                f'<p>Списано: <b>{amount} ₽</b>. Подписка активна до <b>{end}</b>.</p>'
+                '<p>Управление подпиской: <a href="https://matrixvpn.top">matrixvpn.top</a></p>'
+                '<p>Спасибо, что с нами!</p>'
+            )
+        else:
+            subject = 'Не удалось продлить подписку — Matrixxx VPN'
+            body = (
+                '<p>Здравствуйте!</p>'
+                '<p>Мы не смогли списать оплату за продление подписки — пробный период завершён.</p>'
+                '<p>Чтобы продолжить пользоваться VPN, продлите подписку вручную: '
+                '<a href="https://matrixvpn.top">matrixvpn.top</a></p>'
+            )
+        await _aio.to_thread(email_service.send_email, to_email=email, subject=subject, body_html=body)
+        logger.info('trial_conversion email sent', subscription_id=subscription_id, success=success)
+    except Exception as _e:
+        logger.warning('trial_conversion email failed', subscription_id=subscription_id, error=_e)
+
+
 _RECURRING_METHOD_CODE_MAP = {
     'sberpay': 'sberpay',
     'sbp': 'sbp-qr',
@@ -328,6 +377,97 @@ class EtoplatezhiPaymentMixin:
 
             # Определяем is_paid по статусу
             is_confirmed = etoplatezhi_status == 'success'
+
+            # Diagnostic: log every incoming callback status so refund/reversal
+            # postbacks are observable.
+            logger.info(
+                'Etoplatezhi callback received',
+                order_id=our_payment_id,
+                etoplatezhi_status=etoplatezhi_status,
+            )
+
+            # Trial → paid auto-conversion: payment_id с префиксом trial_convert_
+            # не имеет row в etoplatezhi_payments (charge инициируется через COF
+            # endpoint, минуя Payment Page). Роутим в trial_conversion_service.
+            from sqlalchemy import select
+
+            from app.services.trial_conversion_service import (
+                TRIAL_CONVERT_PAYMENT_PREFIX,
+                convert_trial_to_paid_from_callback,
+                parse_subscription_id,
+            )
+
+            if our_payment_id.startswith(TRIAL_CONVERT_PAYMENT_PREFIX):
+                subscription_id = parse_subscription_id(our_payment_id)
+                if not subscription_id:
+                    logger.warning(
+                        'Etoplatezhi trial_convert: невалидный payment_id',
+                        payment_id=our_payment_id,
+                    )
+                    return False
+
+                # Mirror the recurring/topup model: maintain an etoplatezhi_payments
+                # row for every trial_convert webhook (decline/success), so admin
+                # /admin/payments search via _search_etoplatezhi can surface them.
+                # Trial-convert charges bypass Payment Page (COF endpoint), so we
+                # create the row here in the webhook rather than at charge time.
+                etoplatezhi_crud = import_module('app.database.crud.etoplatezhi')
+                sum_data = payment_data.get('sum', {}) or {}
+                amount_kopeks = int(sum_data.get('amount') or 0) or None
+
+                from app.database.models import Subscription as _SubModel
+
+                _sub_row = (
+                    await db.execute(select(_SubModel).where(_SubModel.id == subscription_id))
+                ).scalar_one_or_none()
+                _user_id = _sub_row.user_id if _sub_row else None
+
+                existing = await etoplatezhi_crud.get_etoplatezhi_payment_by_order_id(db, our_payment_id)
+                if existing is None and amount_kopeks:
+                    existing = await etoplatezhi_crud.create_etoplatezhi_payment(
+                        db,
+                        user_id=_user_id,
+                        order_id=our_payment_id,
+                        amount_kopeks=amount_kopeks,
+                        description=f'Конверсия триала #{subscription_id}',
+                        etoplatezhi_payment_id=str(etoplatezhi_payment_id) if etoplatezhi_payment_id else None,
+                    )
+
+                if not is_confirmed:
+                    logger.info(
+                        'Etoplatezhi trial_convert: статус не success, skip',
+                        payment_id=our_payment_id,
+                        status=etoplatezhi_status,
+                    )
+                    if existing:
+                        await etoplatezhi_crud.update_etoplatezhi_payment_status(
+                            db,
+                            existing,
+                            status=etoplatezhi_status or 'error',
+                            etoplatezhi_payment_id=str(etoplatezhi_payment_id) if etoplatezhi_payment_id else None,
+                        )
+                    await _send_trial_conv_email(db, subscription_id, False, amount_kopeks)
+                    return True
+
+                ok = await convert_trial_to_paid_from_callback(
+                    db,
+                    subscription_id=subscription_id,
+                    amount_kopeks=amount_kopeks,
+                    provider='etoplatezhi',
+                    provider_payment_id=str(etoplatezhi_payment_id),
+                )
+                if ok and existing:
+                    await etoplatezhi_crud.update_etoplatezhi_payment_status(
+                        db,
+                        existing,
+                        status='success',
+                        is_paid=True,
+                        etoplatezhi_payment_id=str(etoplatezhi_payment_id) if etoplatezhi_payment_id else None,
+                    )
+                if ok:
+                    await db.commit()
+                    await _send_trial_conv_email(db, subscription_id, True, amount_kopeks)
+                return ok
 
             # Ищем платеж по order_id (наш payment_id = order_id)
             etoplatezhi_crud = import_module('app.database.crud.etoplatezhi')
