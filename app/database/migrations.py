@@ -135,6 +135,56 @@ async def _ensure_runtime_schema_guards() -> None:
             )
 
 
+async def _heal_custom_chain_revision_collision() -> None:
+    """Re-stamp DBs migrated by the historical custom v3.x patch chain.
+
+    Проблема: кастомная ветка v3.62 использовала СВОИ ревизии с id
+    '0095' (recurring_provider_columns), '0096' (saved_method_code),
+    '0097' (unitpay_payments), а upstream v4 переиспользует эти же id для
+    add_coupons / add_recurrent_payments / add_grace_access. При
+    ``alembic upgrade head`` на такой БД alembic считает upstream 0095–0097
+    применёнными и молча их пропускает → нет coupons/recurrent_payments и,
+    критично, grace-колонок subscriptions → ORM падает на первом же SELECT
+    (а наивный прогон 0098+ падает раньше — 0102 без гарда бьётся об
+    отсутствующий coupon_batches).
+
+    Отпечаток кастомной цепочки (исключает false positive на vanilla-v4 БД):
+      * alembic_version ∈ {'0095','0096','0097'}
+      * subscriptions.grace_candidate_reason ОТСУТСТВУЕТ
+        (на vanilla-БД с version>='0097' она есть — 0097_add_grace_access)
+      * saved_payment_methods.provider СУЩЕСТВУЕТ
+        (создавалась только кастомной 0095; vanilla получает её лишь в 0105)
+
+    Лечение: stamp '0094' (последняя общая ревизия) — дальше upstream
+    0095–0104 накатываются штатно (все inspector-guarded), а 0105
+    идемпотентно поверх уже существующих кастомных колонок.
+    """
+    from app.database.database import engine
+
+    def _fingerprint(sync_conn) -> bool:
+        inspector = inspect(sync_conn)
+        if not inspector.has_table('alembic_version'):
+            return False
+        version = sync_conn.execute(text('SELECT version_num FROM alembic_version')).scalar()
+        if version not in ('0095', '0096', '0097'):
+            return False
+        if not inspector.has_table('subscriptions') or not inspector.has_table('saved_payment_methods'):
+            return False
+        sub_columns = {col['name'] for col in inspector.get_columns('subscriptions')}
+        spm_columns = {col['name'] for col in inspector.get_columns('saved_payment_methods')}
+        return 'grace_candidate_reason' not in sub_columns and 'provider' in spm_columns
+
+    async with engine.connect() as conn:
+        needs_heal = await conn.run_sync(_fingerprint)
+
+    if needs_heal:
+        logger.warning(
+            'Обнаружена БД кастомной v3.x-цепочки миграций (коллизия ревизий 0095–0097 '
+            'с upstream v4) — re-stamp на 0094, upstream-миграции будут применены штатно'
+        )
+        await _stamp_alembic_revision('0094')
+
+
 async def run_alembic_upgrade() -> None:
     """Run ``alembic upgrade head``, handling fresh and legacy databases."""
     import asyncio
@@ -153,6 +203,10 @@ async def run_alembic_upgrade() -> None:
             'Обнаружена существующая БД без alembic_version — автоматический stamp 0001 (переход с universal_migration)'
         )
         await _stamp_alembic_revision(_INITIAL_REVISION)
+
+    if db_state == 'managed':
+        # v3.x custom-chain → v4: revision-id collision (0095–0097) self-heal.
+        await _heal_custom_chain_revision_collision()
 
     cfg = _get_alembic_config()
     loop = asyncio.get_running_loop()

@@ -41,7 +41,27 @@ depends_on = None
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
-    if 'saved_payment_methods' not in inspector.get_table_names():
+    tables = inspector.get_table_names()
+
+    # Pre-flight: защита от коллизии ревизий кастомной v3.x-цепочки.
+    # Кастомная ветка v3.62 занимала id '0095'–'0097' своими ревизиями; на
+    # такой БД alembic молча пропускает upstream 0095_add_coupons /
+    # 0096_add_recurrent_payments / 0097_add_grace_access. Штатный путь —
+    # app.database.migrations.run_alembic_upgrade — авто-ре-стампит 0094 до
+    # апгрейда; этот raise ловит только ручные `alembic upgrade head` в обход
+    # него. Отсутствие grace-колонки при существующей subscriptions означает,
+    # что 0097_add_grace_access не применялась → цепочка неконсистентна.
+    if 'subscriptions' in tables:
+        subscription_columns = {col['name'] for col in inspector.get_columns('subscriptions')}
+        if 'grace_candidate_reason' not in subscription_columns:
+            raise RuntimeError(
+                'Migration 0105 pre-flight failed: subscriptions.grace_candidate_reason is missing, '
+                'so upstream revisions 0095-0097 were skipped (custom v3.x chain revision-id '
+                "collision). Fix: `alembic stamp 0094 && alembic upgrade head` (or start the bot "
+                'normally — run_alembic_upgrade() self-heals this automatically).'
+            )
+
+    if 'saved_payment_methods' not in tables:
         return
 
     existing = {col['name'] for col in inspector.get_columns('saved_payment_methods')}
