@@ -41,6 +41,8 @@ services:
   bot:
     build: .
     container_name: remnawave_bot
+    labels:
+      - "autoheal=true"
     restart: unless-stopped
     depends_on:
       postgres:
